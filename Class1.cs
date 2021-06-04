@@ -8,15 +8,6 @@ namespace NeosQuickSetupTools
     public class Class1 : Component
     {
 
-        public readonly RelayRef<IField<float>> blah;
-        public RelayRef<IField<float>> bloh;
-        public readonly FieldDrive<Slot> fieldSlotRO;
-        public FieldDrive<bool> a;
-        public readonly bool b;
-        public readonly Sync<bool> c;
-        //public readonly Sync<Slot> syncSlotRO;
-        //public readonly RelayRef<IField<Slot>> relaySlotRO;
-        //public readonly Sync<SkinnedMeshRenderer> syncRenderer;
         public readonly SyncRef<SkinnedMeshRenderer> skinRef;
         public readonly SyncRef<Slot> otherSlot;
         
@@ -40,6 +31,12 @@ namespace NeosQuickSetupTools
                 s.AttachComponent<DynamicValueVariableDriver<T>>();
             dynVariable.VariableName.Value = name;
             dynVariable.Target.Target = field;
+            /* If a field is already driven, you can only use ForceLink
+             * to replace the current driver.
+             * This is rather dangerous, as that breaks previous links
+             * and I'm not sure 'Undo' will be able to recover from
+             * this.
+             */
             if (dynVariable.Target.Target == null)
             {
                 if (!forceLink)
@@ -95,16 +92,7 @@ namespace NeosQuickSetupTools
 
                 }
             }
-            /*if (slot != null && slot.Target.Value != null)
-            {
-                UniLog.Log("Slot target value");
-                UniLog.Log(slot.Target.Value);
 
-                Slot bodySlot = slot.Target.Value;
-                SkinnedMeshRenderer skin = bodySlot.GetComponent<SkinnedMeshRenderer>();
-                IField<float> blendShapeField = skin.GetBlendShape("vrc.v_aa");
-                 blendShapeField.DriveFromVariable("vrc.v_aa");
-            }*/
         }
 
     }
