@@ -1,6 +1,8 @@
 ﻿using System;
 using BaseX;
 using FrooxEngine;
+using FrooxEngine.LogiX.Operators;
+using FrooxEngine.LogiX.Input;
 
 namespace NeosQuickSetupTools
 {
@@ -65,16 +67,104 @@ namespace NeosQuickSetupTools
                 forceLink);
         }
 
+        void AddCodeTo(Slot slot)
+        {
+
+            Slot add_slot = slot.AddSlot("Add");
+            Slot int_val0_slot = slot.AddSlot("IntA");
+            Slot int_val1_slot = slot.AddSlot("IntB");
+
+
+            Type typeT = typeof(FrooxEngine.LogiX.Input.IntInput);
+            UniLog.Log(null);
+            string searchString = typeT.FullName + ",FrooxEngine.LogiX.Input";
+            UniLog.Log(
+                "Assembly Names : \n" +
+                "Full Name : " + typeT.Assembly.FullName  + "\n" +
+                "Name      : " + typeT.Assembly.GetName() + "\n");
+            UniLog.Log(
+                "IntInput :\n" +
+                typeT.AssemblyQualifiedName + "\n" +
+                typeT.Name + "\n" +
+                searchString + "\n");
+
+            
+            string receivedType = "Input.FloatInput";
+            string searchedType = "FrooxEngine.LogiX." + receivedType + ", " + typeT.Assembly.FullName;
+            UniLog.Log("Looking for : " + searchedType);
+            UniLog.Log("Instead of  : " + typeof(FloatInput).AssemblyQualifiedName);
+
+            Type retrospecType = Type.GetType(searchedType);
+            Type otherRestrospec = Type.GetType(typeT.Name);
+            
+            if (retrospecType != null)
+            {
+                Slot test_slot = slot.AddSlot("Test");
+                test_slot.AttachComponent(retrospecType);
+            }
+            else
+            {
+                UniLog.Log("Retrospec is null !");
+            }
+
+            if (otherRestrospec != null)
+            {
+                UniLog.Log("Got it with the short name !");
+            }
+            else
+            {
+                UniLog.Log("otherRetrospec is also null");
+            }
+            
+            var int_val0 = int_val0_slot.AttachComponent<IntInput>();
+            var int_val1 = int_val1_slot.AttachComponent<IntInput>();
+            var add_int  = add_slot.AttachComponent<Add_Int>();
+            var field = add_int.TryGetField("A");
+            if (field != null)
+            {
+                ((FrooxEngine.LogiX.Input<int>)field).Target = int_val0;
+            }
+
+            field = add_int.TryGetField("B");
+            if (field != null)
+            {
+                ((FrooxEngine.LogiX.Input<int>)field).Target = int_val1;
+            }
+            //add_int.A.Target = int_val0;
+            //add_int.B.Target = int_val1;
+        }
+
+
+        private void AddScript(Slot baseSlot, string serialized)
+        {
+            string[] lines = serialized.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
+
+            foreach (string line in lines)
+            {
+                switch (line[0])
+                {
+                    case 'N':
+                        string[] args = line.Split(',');
+                        string slot_name = args[1];
+                        string slot_class = args[2];
+                        break;
+
+                }
+            }
+        }
+
         protected override void OnChanges()
         {
             base.OnChanges();
             UniLog.Log("-----------------");
             UniLog.Log("Changed triggered");
 
-            
-
             //if (body != null && body.IsValid)
-            if (skinRef             != null 
+            if (otherSlot != null && otherSlot.Target != null)
+            {
+                AddCodeTo(otherSlot);
+            }
+            /*if (skinRef             != null 
                 && skinRef.Target   != null
                 && otherSlot        != null
                 && otherSlot.Target != null)
@@ -91,7 +181,9 @@ namespace NeosQuickSetupTools
                     AddDynVarFor(blendShape, "blendshape." + name, otherSlot);
 
                 }
-            }
+            }*/
+
+
 
         }
 
