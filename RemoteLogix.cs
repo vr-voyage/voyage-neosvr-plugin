@@ -12,10 +12,11 @@ namespace NeosQuickSetupTools
     public class RemoteLogix : Component
     {
 
-        public readonly SyncRef<SkinnedMeshRenderer> skinRef;
+        /*public readonly SyncRef<SkinnedMeshRenderer> skinRef;
         public readonly SyncRef<Slot> otherSlot;
-        public readonly SyncRef<Slot> testEmotionSlot;
+        public readonly SyncRef<Slot> testEmotionSlot;*/
         public readonly Sync<string> websocketServerAddress;
+        public readonly Sync<bool> connect;
 
         private readonly string systemAssemblyName = typeof(string).Assembly.FullName;
         private readonly string frooxAssemblyName  = typeof(FrooxEngine.LogiX.LogixNode).Assembly.FullName;
@@ -26,6 +27,8 @@ namespace NeosQuickSetupTools
         private Slot baseSlot;
         private Slot programSlot;
         private System.Collections.Generic.Dictionary<string, LogixNode> programNodes;
+
+        private WebsocketClient addedClient;
 
         const char scriptFieldSeparator = ' ';
 
@@ -74,18 +77,42 @@ namespace NeosQuickSetupTools
             UniLog.Log("Help I'm attached ! Send someone !");
             UniLog.Log("My Slot Name is : " + Slot.Name);
 
-            var ws = Slot.AttachComponent<WebsocketClient>();
+            if (websocketServerAddress.Value == null || websocketServerAddress.Value == "")
+            {
+                websocketServerAddress.Value = "ws://localhost:9080";
+            }
+
+            baseSlot = Slot;
+
+        }
+
+        protected override void OnDestroy()
+        {
+            WebsocketSlotRemove();
+        }
+
+        private void WebsocketSlotAdd(Slot slot, string address)
+        {
+            var ws = slot.AttachComponent<WebsocketClient>();
             ws.Error += MyyWebsocketError;
             ws.Closed += MyyWebsocketClosed;
             ws.Connected += MyyWebsocketConnected;
             ws.BinaryMessageReceived += MyyWebsocketMessageBinary;
             ws.TextMessageReceived += MyyWebsocketMessageText;
-            ws.URL.Value = new Uri("ws://localhost:9080");
+            ws.URL.Value = new Uri(address);
             ws.HandlingUser.Target = ws.LocalUser;
-
-            baseSlot = Slot;
-
+            addedClient = ws;
         }
+
+        private void WebsocketSlotRemove()
+        {
+            if (addedClient != null)
+            {
+                addedClient.Destroy();
+            }
+        }
+
+        
 
         private DynamicValueVariableDriver<T> AddDynVarDriverFor<T>(
             Slot s,
@@ -751,7 +778,14 @@ namespace NeosQuickSetupTools
 
         protected override void OnChanges()
         {
-
+            if (connect)
+            {
+                WebsocketSlotAdd(Slot, websocketServerAddress);
+            }
+            else
+            {
+                WebsocketSlotRemove();
+            }
         }
 
 
