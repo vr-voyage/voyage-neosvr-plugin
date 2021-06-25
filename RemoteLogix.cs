@@ -6,7 +6,7 @@ using FrooxEngine.LogiX.Input;
 using FrooxEngine.LogiX;
 using System.Reflection;
 
-namespace NeosQuickSetupTools
+namespace VoyageNeosVRPlugin
 {
     [Category("Voyage")]
     public class RemoteLogix : Component
@@ -682,14 +682,6 @@ namespace NeosQuickSetupTools
                  * FrooxEngine.Logix.Data.ReadDynamicVariable<System-Single>
                  */
                 string genericTypeName = providedNodeTypeFullName.Substring(0, bracketPosition);
-                /* It seems that all generics type names are suffixed with '`1' */
-                genericTypeName += "`1";
-                Type genericType = LogixGetType(genericTypeName);
-                if (genericType == null)
-                {
-                    UniLog.Log("Could not find generic type " + genericTypeName);
-                    return null;
-                }
 
                 int afterStartBracketIdx = bracketPosition + 1;
                 int betweenBracketsLength =
@@ -700,6 +692,16 @@ namespace NeosQuickSetupTools
                 string[] typeTNamesList = specialTypeNames.Split(new[] { ',' });
                 Type[] specialTypes = new Type[typeTNamesList.Length];
                 int typesCount = typeTNamesList.Length;
+
+                /* It seems that all generics type names are suffixed with '`' followed
+                 * by the amount of generic arguments */
+                genericTypeName += "`" + typesCount;
+                Type genericType = LogixGetType(genericTypeName);
+                if (genericType == null)
+                {
+                    UniLog.Log("Could not find generic type " + genericTypeName);
+                    return null;
+                }
 
                 for (int i = 0; i < typesCount; i++)
                 {

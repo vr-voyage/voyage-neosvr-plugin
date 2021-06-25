@@ -2,6 +2,15 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>VoyageNeosVRPlugin</AssemblyName>
+    <PackageProjectUrl>https://github.com/vr-voyage/voyage-neosvr-plugin</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Voyage (VRSNS)</Copyright>
+    <Description>Currently used to provide a remote Logix scripts import mechanisms.
+Such scripts can be generated through RemoteLogix : https://github.com/vr-voyage/remote-logix</Description>
+    <RepositoryUrl>https://github.com/vr-voyage/voyage-neosvr-plugin</RepositoryUrl>
+    <RepositoryType>Github</RepositoryType>
+    <RootNamespace>VoyageNeosVRPlugin</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
