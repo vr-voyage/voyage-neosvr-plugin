@@ -84,6 +84,12 @@ namespace VoyageNeosVRPlugin
 
             baseSlot = Slot;
 
+            /*var register = Slot.AttachComponent<FrooxEngine.LogiX.Data.ValueRegister<bool>>();
+            var writer   = Slot.AttachComponent<FrooxEngine.LogiX.Actions.WriteValueNode<bool>>();
+            var refnode = Slot.AttachComponent<FrooxEngine.LogiX.ReferenceNode<IValue<bool>>>();
+            refnode.RefTarget.TrySet(register);
+            writer.Target.TrySet(refnode);*/
+
         }
 
         protected override void OnDestroy()
@@ -94,11 +100,11 @@ namespace VoyageNeosVRPlugin
         private void WebsocketSlotAdd(Slot slot, string address)
         {
             var ws = slot.AttachComponent<WebsocketClient>();
+            ws.BinaryMessageReceived += MyyWebsocketMessageBinary;
+            ws.TextMessageReceived += MyyWebsocketMessageText;
             ws.Error += MyyWebsocketError;
             ws.Closed += MyyWebsocketClosed;
             ws.Connected += MyyWebsocketConnected;
-            ws.BinaryMessageReceived += MyyWebsocketMessageBinary;
-            ws.TextMessageReceived += MyyWebsocketMessageText;
             ws.URL.Value = new Uri(address);
             ws.HandlingUser.Target = ws.LocalUser;
             addedClient = ws;
@@ -186,14 +192,34 @@ namespace VoyageNeosVRPlugin
             return ret;
         }
 
+        private void PrintIfNull(object o, string identifier)
+        {
+            if (o == null)
+            {
+                UniLog.Log($"{identifier} is NULL");
+            }
+        }
+
         void LogixConnectInputTo(
             LogixNode toNode,
             string inputName,
             LogixNode fromNode,
             string outputName = "*")
         {
+
+            PrintIfNull(toNode, "toNode");
+            PrintIfNull(inputName, "inputName");
+            PrintIfNull(fromNode, "fromNode");
+            PrintIfNull(outputName, "outputName");
+
             /* FIXME Check if the type is compatible before casting... */
             var input = toNode.TryGetField(inputName);
+
+            if (input == null)
+            {
+                UniLog.Log($"Input {inputName} not found on {toNode.GetType()}");
+                return;
+            }
             
             if (outputName == "*")
             {
@@ -213,6 +239,7 @@ namespace VoyageNeosVRPlugin
             string toActionName)
         {
 
+            UniLog.Log("Connecting IMPULSE !");
             Action toAction = (Action)Delegate.CreateDelegate(
                 typeof(Action),
                 toNode,
@@ -391,6 +418,27 @@ namespace VoyageNeosVRPlugin
             LogixSetConst(programSlot, node, value);
         }
 
+        void ParseComponent(string[] instruction)
+        {
+            if (instruction.Length < 2)
+            {
+                UniLog.Log("Not enough arguments for COMPONENT instruction");
+            }
+
+            string slotID = instruction[1];
+            string componentTypeName = instruction[2];
+
+            Type componentType = ScriptGetActualNodeType(componentTypeName);
+            if (componentType == null)
+            {
+                UniLog.Log($"Could not resolve type {componentTypeName}");
+                UniLog.Log("Not adding component");
+                return;
+            }
+
+            programSlot.AttachComponent(componentType);
+        }
+
         private void ScriptParseLine(string line)
         {
             UniLog.Log("Parsing :");
@@ -424,6 +472,11 @@ namespace VoyageNeosVRPlugin
                         ParseSetConst(instruction);
                     }
                     break;
+                case "COMPONENT":
+                    {
+                        ParseComponent(instruction);
+                    }
+                    break;
 
             }
         }
@@ -453,18 +506,18 @@ namespace VoyageNeosVRPlugin
 
         void MyyWebsocketError(WebsocketClient client, string error)
         {
-            UniLog.Log("Websocket error with client : ");
+            UniLog.Log("[VoyagePlugin] Websocket error with client : ");
             UniLog.Log(error);
         }
 
         void MyyWebsocketClosed(WebsocketClient client)
         {
-            UniLog.Log("Websocket closed");
+            UniLog.Log("[VoyagePlugin] Websocket closed");
         }
 
         void MyyWebsocketConnected(WebsocketClient client)
         {
-            UniLog.Log("Websocket connected");
+            UniLog.Log("[VoyagePlugin] Websocket connected");
             baseSlot = client.Slot;
             UniLog.Log("Base slot is now : ");
             UniLog.Log(baseSlot);
@@ -472,13 +525,13 @@ namespace VoyageNeosVRPlugin
 
         void MyyWebsocketMessageBinary(WebsocketClient client, byte[] data)
         {
-            UniLog.Log("Websocket binary message");
+            UniLog.Log("[VoyagePlugin] Websocket binary message");
             UniLog.Log(data);
         }
 
         void MyyWebsocketMessageText(WebsocketClient client, string text)
         {
-            UniLog.Log("Websocket text message");
+            UniLog.Log("[VoyagePlugin] Websocket text message");
             UniLog.Log(text);
             WebsocketSaveMessage(text);
         }
@@ -586,6 +639,21 @@ namespace VoyageNeosVRPlugin
                         else
                         {
                             UniLog.Log("Could not convert " + inputValue + " to bool");
+                            return;
+                        }
+                    }
+                    break;
+                case "FrooxEngine.Logix.Input.ColorInput":
+                    {
+                        
+                        ColorTextInput colorInputNode = (ColorTextInput)node;
+                        if (RobustParser.TryParse(inputValue, out color value))
+                        {
+                            colorInputNode.CurrentValue = value;
+                        }
+                        else
+                        {
+                            UniLog.Log("Could not convert " + inputValue + " to Color");
                             return;
                         }
                     }

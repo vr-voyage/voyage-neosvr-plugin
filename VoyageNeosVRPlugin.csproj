@@ -26,6 +26,9 @@ Such scripts can be generated through RemoteLogix : https://github.com/vr-voyage
     <Reference Include="FrooxEngine">
       <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\NeosVR\Neos_Data\Managed\FrooxEngine.dll</HintPath>
     </Reference>
+    <Reference Include="LogiX">
+      <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\NeosVR\Neos_Data\Managed\LogiX.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
