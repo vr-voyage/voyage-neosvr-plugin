@@ -26,7 +26,10 @@ namespace VoyageNeosVRPlugin
 
         private Slot baseSlot;
         private Slot programSlot;
+        private Slot logixSlot;
         private System.Collections.Generic.Dictionary<string, LogixNode> programNodes;
+        private System.Collections.Generic.Dictionary<string, Slot> programSlots;
+        private Slot currentSlot;
 
         private WebsocketClient addedClient;
 
@@ -207,11 +210,6 @@ namespace VoyageNeosVRPlugin
             string outputName = "*")
         {
 
-            PrintIfNull(toNode, "toNode");
-            PrintIfNull(inputName, "inputName");
-            PrintIfNull(fromNode, "fromNode");
-            PrintIfNull(outputName, "outputName");
-
             /* FIXME Check if the type is compatible before casting... */
             var input = toNode.TryGetField(inputName);
 
@@ -240,6 +238,7 @@ namespace VoyageNeosVRPlugin
         {
 
             UniLog.Log("Connecting IMPULSE !");
+            UniLog.Log($"Getting Delegate {toActionName} from {toNode.Name}");
             Action toAction = (Action)Delegate.CreateDelegate(
                 typeof(Action),
                 toNode,
@@ -256,8 +255,7 @@ namespace VoyageNeosVRPlugin
         {
             UniLog.Log("LogixProgramCreate");
             Slot programSlot = mainSlot.AddSlot(programName);
-            programSlot.AddSlot("LogiX");
-            programSlot.AddSlot("DV");
+            logixSlot = programSlot.AddSlot("LogiX");
             UniLog.Log("End of LogixProgramCreate");
             return programSlot;
         }
@@ -265,14 +263,14 @@ namespace VoyageNeosVRPlugin
         LogixNode LogixProgramAddNode(Slot program, string nodeName, string nodeType)
         {
             UniLog.Log("LogixProgramAddNode");
-            Slot logix_slot = program.Find("LogiX");
-            if (logix_slot == null)
+            //Slot logix_slot = program.Find("LogiX");
+            if (currentSlot == null)
             {
                 UniLog.Log("Cannot add " + nodeName + ", the provided program slot is null");
                 return null;
             }
                 
-            Slot node_slot = logix_slot.AddSlot(nodeName);
+            Slot node_slot = currentSlot.AddSlot(nodeName);
             if (node_slot == null)
             {
                 UniLog.Log("Could not add " + nodeName + ". Reason unknown.");
@@ -321,6 +319,9 @@ namespace VoyageNeosVRPlugin
             string fileFormatVersion = instruction[2];
             programSlot              = LogixProgramCreate(baseSlot, programName);
             programNodes             = new System.Collections.Generic.Dictionary<string, LogixNode>();
+            programSlots             = new System.Collections.Generic.Dictionary<string, Slot>();
+            programSlots.Add("S0", programSlot);
+            currentSlot = logixSlot;
         }
 
         private void ParseNode(string[] instruction)
@@ -334,7 +335,7 @@ namespace VoyageNeosVRPlugin
             string nodeType = ScriptUnquoteString(instruction[2]);
             string nodeName = ScriptConvertUserInput(instruction[3]);
             LogixNode programNode =
-                LogixProgramAddNode(programSlot, nodeName, nodeType);
+                LogixProgramAddNode(currentSlot, nodeName, nodeType);
             UniLog.Log("Node added ? ");
             UniLog.Log(programNode != null);
             if (programNode != null)
@@ -363,7 +364,7 @@ namespace VoyageNeosVRPlugin
 
             float.TryParse(posXStr, out float posX);
             float.TryParse(posYStr, out float posY);
-            LogixSetPos(programSlot, node, posX / 1000.0f, - (posY / 1000.0f));
+            LogixSetPos(currentSlot, node, posX / 1000.0f, - (posY / 1000.0f));
         }
 
         private void ParseConnection(string[] instruction)
@@ -390,11 +391,11 @@ namespace VoyageNeosVRPlugin
 
             if (instruction[0] == "INPUT")
             {
-                LogixProgramConnectInput(programSlot, toNode, toInputName, fromNode, fromOutputName);
+                LogixProgramConnectInput(currentSlot, toNode, toInputName, fromNode, fromOutputName);
             }
             else
             {
-                LogixProgramConnectImpulse(programSlot, toNode, toInputName, fromNode, fromOutputName);
+                LogixProgramConnectImpulse(currentSlot, toNode, toInputName, fromNode, fromOutputName);
             }
         }
 
@@ -415,7 +416,7 @@ namespace VoyageNeosVRPlugin
                 return;
             }
 
-            LogixSetConst(programSlot, node, value);
+            LogixSetConst(currentSlot, node, value);
         }
 
         void ParseComponent(string[] instruction)
@@ -423,10 +424,17 @@ namespace VoyageNeosVRPlugin
             if (instruction.Length < 2)
             {
                 UniLog.Log("Not enough arguments for COMPONENT instruction");
+                return;
             }
 
             string slotID = instruction[1];
             string componentTypeName = instruction[2];
+
+            if (programSlots.TryGetValue(slotID, out Slot componentSlot) == false)
+            {
+                UniLog.Log($"Could not get slot {slotID}");
+                return;
+            }
 
             Type componentType = ScriptGetActualNodeType(componentTypeName);
             if (componentType == null)
@@ -436,7 +444,181 @@ namespace VoyageNeosVRPlugin
                 return;
             }
 
-            programSlot.AttachComponent(componentType);
+            componentSlot.AttachComponent(componentType);
+        }
+
+        public static object GetDefault(Type type)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                var valueProperty = type.GetProperty("Value");
+                type = valueProperty.PropertyType;
+            }
+
+            return type.IsValueType ? Activator.CreateInstance(type) : null;
+        }
+
+        void ParseVar(string[] instruction)
+        {
+            if (instruction.Length < 4)
+            {
+                UniLog.Log("Not enough arguments for VAR instruction");
+                return;
+            }
+
+            string slotID      = instruction[1];
+            string varName     = ScriptConvertUserInput(instruction[2]);
+            string varTypeName = ScriptUnquoteString(instruction[3]);
+
+            if (programSlots.TryGetValue(slotID, out Slot varSlot) == false)
+            {
+                UniLog.Log($"Cannot get slot {slotID}");
+                return;
+            }
+
+            UniLog.Log($"Adding to slot {varSlot.Name} - LGXID : {slotID}");
+
+            Type varType = GetTypeFromFullName(varTypeName);
+
+            if (varType == null)
+            {
+                UniLog.Log($"Could not retrieve type {varTypeName}");
+                return;
+            }
+
+            UniLog.Log($"Got {varType.AssemblyQualifiedName} from {varTypeName}");
+
+            DynamicVariableSpace dv = varSlot.GetComponent<DynamicVariableSpace>();
+            if (dv == null)
+            {
+                dv = varSlot.AttachComponent<DynamicVariableSpace>();
+                if (dv == null)
+                {
+                    UniLog.Log($"Could not generate component :C");
+                    return;
+                }
+            }
+
+            UniLog.Log("Added component");
+
+            MethodInfo getManager = typeof(DynamicVariableSpace).GetMethod("GetManager").MakeGenericMethod(varType);
+
+            if (getManager == null)
+            {
+                UniLog.Log($"Could not retrieve DynamicVariableSpace.GetManager<{varType}>");
+                return;
+            }
+
+            UniLog.Log($"Got DynamicVariableSpace.GetManager<{varType}>");
+
+            getManager.Invoke(dv, new object[] { "", false });
+
+            MethodInfo createVariable = typeof(DynamicVariableHelper).GetMethod("CreateVariable");
+
+            if (createVariable == null)
+            {
+                UniLog.Log($"Could not retrieve DynamicVariableHelper.CreateVariable");
+                return;
+            }
+
+            MethodInfo createVariableSpec = createVariable.MakeGenericMethod(varType);
+
+            if (createVariableSpec == null)
+            {
+                UniLog.Log($"Could not specialize CreateVariable with type {varType}");
+                return;
+            }
+
+            UniLog.Log($"Got CreateVariable<{varType}>");
+            UniLog.Log($"CreateVariable Arity : {createVariableSpec.Attributes}");
+            createVariableSpec.Invoke(varSlot, new object[] { varSlot, varName, GetDefault(varType), true });
+
+        }
+
+        void ParseSlot(string[] instructions)
+        {
+            if (instructions.Length < 3)
+            {
+                UniLog.Log("Not enough arguments for SLOT");
+                return;
+            }
+
+            string slotID   = instructions[1];
+            string slotName = ScriptConvertUserInput(instructions[2]);
+
+            if (programSlots.ContainsKey(slotID))
+            {
+                UniLog.Log($"Slot {slotID} already exists !");
+                return;
+            }
+
+            /* FIXME Define the current slot with another instruction */
+            Slot newSlot = logixSlot.AddSlot(slotName);
+            newSlot.Tag = slotName;
+
+            programSlots.Add(slotID, newSlot);
+            currentSlot = newSlot;
+        }
+
+        void ParseSetNodeSlot(string[] instructions)
+        {
+            if (instructions.Length < 4)
+            {
+                UniLog.Log("Not enough arguments for SETNODESLOT");
+                return;
+            }
+
+            string nodeID = instructions[1];
+            string nodeInputName = ScriptUnquoteString(instructions[2]);
+            string slotID = instructions[3];
+
+            if (programNodes.TryGetValue(nodeID, out LogixNode node) == false)
+            {
+                UniLog.Log("Node " + nodeID + " not found !");
+                return;
+            }
+
+            UniLog.Log("[SETNODESLOT] Got node");
+
+            if (programSlots.TryGetValue(slotID, out Slot slotToConnect) == false)
+            {
+                UniLog.Log($"Slot {slotID} not found !");
+                return;
+            }
+
+            UniLog.Log("[SETNODESLOT] Got slot");
+
+            ReferenceNode<Slot> refNode = slotToConnect.GetComponent<ReferenceNode<Slot>>();
+            if (refNode == null)
+            {
+                refNode = slotToConnect.AttachComponent<ReferenceNode<Slot>>();
+                if (refNode == null)
+                {
+                    UniLog.Log("[SETNODESLOT] Could not create the reference node");
+                    return;
+                }
+                if (refNode.RefTarget.TrySet(slotToConnect) == false)
+                {
+                    UniLog.Log("[SETNODESLOT] Could not setup the reference node");
+                    refNode.Destroy();
+                    return;
+                }
+            }
+
+            /* FIXME Check if the type is compatible before casting... */
+            var input = node.TryGetField(nodeInputName);
+
+            if (input == null)
+            {
+                UniLog.Log($"Input {nodeInputName} not found on {node.GetType()}");
+                return;
+            }
+
+            UniLog.Log("[SETNODESLOT] Got Input");
+
+            bool connected = ((ISyncRef)input).TrySet(refNode);
+            UniLog.Log($"[SETNODESLOT] Connected ? {connected}");
+
         }
 
         private void ScriptParseLine(string line)
@@ -475,6 +657,21 @@ namespace VoyageNeosVRPlugin
                 case "COMPONENT":
                     {
                         ParseComponent(instruction);
+                    }
+                    break;
+                case "VAR":
+                    {
+                        ParseVar(instruction);
+                    }
+                    break;
+                case "SLOT":
+                    {
+                        ParseSlot(instruction);
+                    }
+                    break;
+                case "SETNODESLOT":
+                    {
+                        ParseSetNodeSlot(instruction);
                     }
                     break;
 
@@ -726,6 +923,24 @@ namespace VoyageNeosVRPlugin
             UniLog.Log("Parsed value : " + parsedValue.ToString() + " (from : " + inputValue + ")");
         }
 
+        Type GetTypeFromFullName(string typeTFullName)
+        {
+            string assemblyFullName = GetAssemblyNameFrom(typeTFullName);
+
+            if (assemblyFullName == "")
+            {
+                UniLog.Log("Cannot get the assembly full name of : " + typeTFullName);
+                return null;
+            }
+            string typeTSearchName = typeTFullName + ", " + assemblyFullName;
+            Type returnedType = Type.GetType(typeTSearchName);
+            if (returnedType == null)
+            {
+                UniLog.Log("Cannot find type : " + typeTSearchName);
+            }
+            return returnedType;
+        }
+
         Type ScriptGetActualNodeType(string providedNodeTypeFullName)
         {
             int bracketPosition = providedNodeTypeFullName.IndexOf('<');
@@ -773,24 +988,13 @@ namespace VoyageNeosVRPlugin
 
                 for (int i = 0; i < typesCount; i++)
                 {
-                    string typeTFullName = typeTNamesList[i].Trim();
-                    string assemblyFullName = GetAssemblyNameFrom(typeTFullName);
+                    Type specialType = GetTypeFromFullName(typeTNamesList[i].Trim());
 
-                    if (assemblyFullName == "")
-                    {
-                        UniLog.Log("Cannot get the assembly full name of : " + typeTFullName);
-                        UniLog.Log("Complete type passed : " + providedNodeTypeFullName);
-                        return null;
-                    }
-                    string typeTSearchName = typeTFullName + ", " + assemblyFullName;
-                    Type specialType = Type.GetType(typeTSearchName);
                     if (specialType == null)
                     {
-                        UniLog.Log("Cannot find type : " + typeTSearchName);
                         UniLog.Log("For : " + providedNodeTypeFullName);
                         return null;
                     }
-
                     specialTypes[i] = specialType;
                 }
 
