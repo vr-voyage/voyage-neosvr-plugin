@@ -87,6 +87,20 @@ namespace VoyageNeosVRPlugin
 
             baseSlot = Slot;
 
+            /*var seqImpulse = Slot.AttachComponent<FrooxEngine.LogiX.ProgramFlow.SequenceImpulse>();
+
+
+            foreach (var member in seqImpulse.SyncMembers)
+            {
+                UniLog.Log(member.Name);
+                if (member.Name == "Sequence")
+                {
+                    UniLog.Log("Got the Sequence !");
+                    UniLog.Log(member.GetType().FullName);
+                }
+            }*/
+
+
             /*var register = Slot.AttachComponent<FrooxEngine.LogiX.Data.ValueRegister<bool>>();
             var writer   = Slot.AttachComponent<FrooxEngine.LogiX.Actions.WriteValueNode<bool>>();
             var refnode = Slot.AttachComponent<FrooxEngine.LogiX.ReferenceNode<IValue<bool>>>();
@@ -119,52 +133,6 @@ namespace VoyageNeosVRPlugin
             {
                 addedClient.Destroy();
             }
-        }
-
-        
-
-        private DynamicValueVariableDriver<T> AddDynVarDriverFor<T>(
-            Slot s,
-            string name,
-            IField<T> field,
-            bool forceLink = false)
-        {
-            
-            DynamicValueVariableDriver<T> dynVariable =
-                s.AttachComponent<DynamicValueVariableDriver<T>>();
-            dynVariable.VariableName.Value = name;
-            dynVariable.Target.Target = field;
-            /* If a field is already driven, you can only use ForceLink
-             * to replace the current driver.
-             * This is rather dangerous, as that breaks previous links
-             * and I'm not sure 'Undo' will be able to recover from
-             * this.
-             */
-            if (dynVariable.Target.Target == null)
-            {
-                if (!forceLink)
-                {
-                    s.RemoveComponent(dynVariable);
-                    dynVariable = null;
-                }
-                else
-                {
-                    /* FIXME ! Untested ! */
-                    dynVariable.Target.ForceLink(field);
-                }
-            }
-            return dynVariable;
-        }
-
-        private DynamicValueVariable<T> AddDynVar<T>(Slot slot, string name)
-        {
-            var dynVarSpace = slot.AttachComponent<DynamicVariableSpace>();
-            dynVarSpace.SpaceName.Value = name;
-
-            DynamicValueVariable<T> value = slot.AttachComponent<DynamicValueVariable<T>>();
-            value.VariableName.Value = name;
-
-            return value;
         }
 
         Type LogixGetType(string typeFullName)
@@ -232,7 +200,7 @@ namespace VoyageNeosVRPlugin
 
         void LogixConnectImpulse(
             LogixNode fromNode,
-            string impulseOutputName,
+            string impulseOutput,
             LogixNode toNode,
             string toActionName)
         {
@@ -243,11 +211,52 @@ namespace VoyageNeosVRPlugin
                 typeof(Action),
                 toNode,
                 toActionName);
+
+            string[] impulseOutputNameParts = impulseOutput.Split(new char[] { '[' });
+            string impulseOutputName = impulseOutputNameParts[0];
             /* FIXME Check the type before casting... */
-            var fromImpulse = fromNode.TryGetField(impulseOutputName);
-            if (fromImpulse != null)
+            if (impulseOutputNameParts.Length == 1)
             {
-                ((Impulse)fromImpulse).Target = toAction;
+                var fromImpulse = fromNode.TryGetField(impulseOutputName);
+                UniLog.Log($"fromImpulse Class : {fromImpulse.GetType().FullName}");
+                if (fromImpulse != null)
+                {
+                    ((Impulse)fromImpulse).Target = toAction;
+                }
+            }
+            else
+            {
+                UniLog.Log($"Trying with {impulseOutputName}[{impulseOutputNameParts[1]}]");
+                foreach (var member in fromNode.SyncMembers)
+                {
+                    if (member.Name != impulseOutputName)
+                    {
+                        continue;
+                    }
+
+                    /* Currently, the end bracket isn't encoded in the script,
+                     * since it's really not needed in any way.
+                     * I'm still thinking whether I should replace [ by a comma
+                     */
+                    if (int.TryParse(impulseOutputNameParts[1], out int impulseIndex) == false)
+                    {
+                        UniLog.Log($"[LogixConnectImpulse] Could not parse array index in {impulseOutput}");
+                        return;
+                    }
+
+                    /* FIXME : Check the type before casting ! */
+                    SyncList<Impulse> impulseList = (SyncList<Impulse>)member;
+                    if (impulseIndex >= impulseList.Count)
+                    {
+                        UniLog.Log($"{impulseOutput} is out of range (Max : {impulseOutputName}[{impulseList.Count}])");
+                        return;
+                    }
+
+                    impulseList[impulseIndex].Target = toAction;
+                    return;
+                }
+
+                UniLog.Log($"Member {impulseOutputName} not found");
             }
         }
 
