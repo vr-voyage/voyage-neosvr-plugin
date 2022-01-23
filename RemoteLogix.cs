@@ -106,7 +106,77 @@ namespace VoyageNeosVRPlugin
             var refnode = Slot.AttachComponent<FrooxEngine.LogiX.ReferenceNode<IValue<bool>>>();
             refnode.RefTarget.TrySet(register);
             writer.Target.TrySet(refnode);*/
+            /* RefTarget == ISyncRef */
 
+        }
+
+        void LogError(string error)
+        {
+            UniLog.Log(error);
+        }
+
+        void LogDebug(string debugMessage)
+        {
+            UniLog.Log(debugMessage);
+        }
+
+        void ConnectWriter(LogixNode writeNode, LogixNode targetNode)
+        {
+            /* Not feeling inspired on this one. Still it should do the trick */
+            Type writeNodeType = writeNode.GetType();
+
+            if (writeNodeType.IsGenericType == false)
+            {
+                LogError($"[WriteInto] Can't handle writing to nodes of type {writeNodeType}");
+                return;
+            }
+
+            string genericTypeName = writeNodeType.GetGenericTypeDefinition().ToString();
+
+            switch(genericTypeName)
+            {
+                case "FrooxEngine.LogiX.Actions.WriteValueNode`1[T]":
+                    {
+                        /* FIXME Try to factorize */
+
+                        /* Create the ReferenceNode<IValue<T>> node based on
+                         * the type of the Write node.
+                         */
+                        Type[] writeType = writeNodeType.GetGenericArguments();
+
+                        // ReferenceNode<>
+                        Type genericRefNodeType = typeof(FrooxEngine.LogiX.ReferenceNode<>);
+                        // IValue<>
+                        Type genericIValueType = typeof(FrooxEngine.IValue<>);
+
+                        // IValue<writeType>
+                        Type specializedIValueType = genericIValueType.MakeGenericType(writeType);
+                        // ReferenceNode<IValue<writeType>>
+                        Type specializedRefNodeType = genericRefNodeType.MakeGenericType(specializedIValueType);
+
+                        // The actual LogixNode instance of type ReferenceNode<IValue<writeType>>
+                        Component refNodeComponent = targetNode.Slot.AttachComponent(specializedRefNodeType);
+
+                        /* Connect the write node Target to the reference node.
+                         * Connect the reference node RefTarget to the actual write target
+                         * 
+                         * Write -> RefNode -> Target
+                         */
+                        ISyncRef refNodeTarget   = ((Worker)refNodeComponent).TryGetField("RefTarget") as ISyncRef;
+                        ISyncRef writeNodeTarget = writeNode.TryGetField("Target") as ISyncRef;
+
+                        writeNodeTarget.TrySet(refNodeComponent);
+                        refNodeTarget.TrySet(targetNode);
+
+                        LogDebug("Connected !");
+                    }
+                    break;
+                default:
+                    {
+                        LogError($"[WriteInto] Unable to handle generic type {writeNodeType}");
+                    }
+                    break;
+            }
         }
 
         protected override void OnDestroy()
@@ -246,10 +316,10 @@ namespace VoyageNeosVRPlugin
 
                     /* FIXME : Check the type before casting ! */
                     SyncList<Impulse> impulseList = (SyncList<Impulse>)member;
-                    if (impulseIndex >= impulseList.Count)
+                    while ((impulseIndex >= impulseList.Count) & (impulseIndex - impulseList.Count < 10))
                     {
-                        UniLog.Log($"{impulseOutput} is out of range (Max : {impulseOutputName}[{impulseList.Count}])");
-                        return;
+                        LogDebug("Adding an Impulse");
+                        impulseList.Add();
                     }
 
                     impulseList[impulseIndex].Target = toAction;
@@ -630,6 +700,36 @@ namespace VoyageNeosVRPlugin
 
         }
 
+        void ParseWrite(string[] instruction)
+        {
+            if (instruction.Length < 3)
+            {
+                LogError("Not enough arguments for SLOT");
+                return;
+            }
+
+            LogDebug("ParseWrite");
+
+            string targetSlotID = instruction[1];
+            string writerSlotID = instruction[2];
+
+            if (!programNodes.TryGetValue(targetSlotID, out LogixNode targetNode))
+            {
+                LogError($"[ParseWrite] Invalid TARGET slot ID {targetSlotID}");
+                return;
+            }
+
+            if (!programNodes.TryGetValue(writerSlotID, out LogixNode writerNode))
+            {
+                LogError($"[ParseWrite] Invalid WRITER slot ID {writerSlotID}");
+                return;
+            }
+
+            LogDebug("Connecting");
+
+            ConnectWriter(writerNode, targetNode);
+        }
+
         private void ScriptParseLine(string line)
         {
             UniLog.Log("Parsing :");
@@ -683,7 +783,11 @@ namespace VoyageNeosVRPlugin
                         ParseSetNodeSlot(instruction);
                     }
                     break;
-
+                case "WRITE":
+                    {
+                        ParseWrite(instruction);
+                    }
+                    break;
             }
         }
 
